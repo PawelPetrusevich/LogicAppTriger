@@ -2,6 +2,7 @@
 using System;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Formatting;
 using System.Threading.Tasks;
 
 using Microsoft.Azure.WebJobs;
@@ -17,9 +18,18 @@ namespace LoggicAppTriggerFunction
         [FunctionName("LogicAppTrigger")]
         public static async Task<HttpResponseMessage> Run([HttpTrigger(AuthorizationLevel.Anonymous, "get", "post", Route = null)]HttpRequestMessage req, ILogger log)
         {
+            var obj = await req.Content.ReadAsAsync<RequestModel>();
+
             using (var client = new HttpClient())
             {
-                var result = await PoolingRequestToLogicApp(client, logicAppPath.Value);
+                var response = await client.PostAsJsonAsync(logicAppPath.Value, obj);
+
+                if (response.StatusCode == HttpStatusCode.OK)
+                {
+                    return req.CreateResponse(response.StatusCode);
+                }
+
+                var result = await PoolingRequestToLogicApp(client, response.Headers.Location.ToString());
                 return req.CreateResponse(result);
             }
         }
@@ -33,7 +43,7 @@ namespace LoggicAppTriggerFunction
                 if (IsAccepted(response))
                 {
                     await Task.Delay(response.Headers.RetryAfter.Delta ?? TimeSpan.FromSeconds(10));
-                    return await PoolingRequestToLogicApp(client, response.Headers.Location.ToString());
+                    return await PoolingRequestToLogicApp(client, path);
                 }
 
                 return response.StatusCode;
